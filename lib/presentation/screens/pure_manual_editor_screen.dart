@@ -127,7 +127,11 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
   // 2. Instagram-Style Trending Text Customizer UI
   Widget _buildTextCustomizer(OverlayItem item) {
     return Container(
-      color: Colors.black87,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(16),
+      ),
       padding: const EdgeInsets.all(16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -200,6 +204,37 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
     );
   }
 
+  // 3. Emoji Customizer UI (Simplified)
+  Widget _buildEmojiCustomizer(OverlayItem item) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Emoji Options', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => setState(() => _selectedOverlayId = null)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Use two fingers to scale or rotate the emoji directly on the video canvas.', 
+            style: TextStyle(color: Colors.white54, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
   // 1. Multi-Track Duration Timeline
   Widget _buildTimelineTrack(ManualEditorState state) {
     final maxMs = state.backgroundDuration.inMilliseconds.toDouble();
@@ -207,7 +242,11 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
 
     return Container(
       height: 160,
-      color: Colors.black,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(16),
+      ),
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         children: [
@@ -256,15 +295,43 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
                             left: startPx.clamp(0, trackWidth),
                             width: width.clamp(0, trackWidth - startPx),
                             height: 30,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: _selectedOverlayId == item.id ? Colors.blueAccent : Colors.white24,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.white, width: 1),
-                              ),
-                              child: Center(
-                                child: Text(item.type == OverlayType.emoji ? item.value : 'Text', 
-                                    style: const TextStyle(color: Colors.white, fontSize: 10), overflow: TextOverflow.ellipsis),
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                setState(() => _selectedOverlayId = item.id);
+                              },
+                              onHorizontalDragUpdate: (details) {
+                                final deltaMs = (details.delta.dx / trackWidth) * maxMs;
+                                final duration = item.endTime.inMilliseconds - item.startTime.inMilliseconds;
+                                
+                                int newStartMs = item.startTime.inMilliseconds + deltaMs.toInt();
+                                int newEndMs = item.endTime.inMilliseconds + deltaMs.toInt();
+                                
+                                if (newStartMs < 0) {
+                                  newStartMs = 0;
+                                  newEndMs = duration;
+                                } else if (newEndMs > maxMs) {
+                                  newEndMs = maxMs.toInt();
+                                  newStartMs = newEndMs - duration;
+                                }
+                                
+                                ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(
+                                  startTime: Duration(milliseconds: newStartMs),
+                                  endTime: Duration(milliseconds: newEndMs),
+                                ));
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _selectedOverlayId == item.id 
+                                      ? (item.type == OverlayType.emoji ? Colors.pinkAccent : Colors.blueAccent) 
+                                      : Colors.white24,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.white, width: 1),
+                                ),
+                                child: Center(
+                                  child: Text(item.type == OverlayType.emoji ? item.value : 'Text', 
+                                      style: const TextStyle(color: Colors.white, fontSize: 10), overflow: TextOverflow.ellipsis),
+                                ),
                               ),
                             ),
                           ),
@@ -402,6 +469,7 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
                                   item: overlay,
                                   canvasSize: _canvasSize,
                                   currentPlaybackTime: _currentTime,
+                                  isSelected: _selectedOverlayId == overlay.id,
                                   onEditTap: () => setState(() => _selectedOverlayId = overlay.id),
                                 ),
                             ],
@@ -445,7 +513,9 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
           
           // Customizer or Timeline Area
           if (_selectedOverlayId != null && selectedOverlay != null)
-            _buildTextCustomizer(selectedOverlay)
+            selectedOverlay.type == OverlayType.emoji
+                ? _buildEmojiCustomizer(selectedOverlay)
+                : _buildTextCustomizer(selectedOverlay)
           else
             _buildTimelineTrack(state),
         ],

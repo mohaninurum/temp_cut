@@ -377,7 +377,7 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
   }
 
   Future<void> _pickCustomAudio() async {
-    final result = await FilePicker.pickFiles(type: FileType.audio);
+    final result = await FilePicker.platform.pickFiles(type: FileType.audio);
     if (result != null && result.files.single.path != null) {
       ref.read(editorStateProvider.notifier).setCustomAudio(result.files.single.path!);
       if (mounted) {

@@ -15,6 +15,7 @@ class EditableOverlayItemWidget extends ConsumerStatefulWidget {
   final OverlayItem item;
   final Size canvasSize;
   final Duration currentPlaybackTime;
+  final bool isSelected;
   final VoidCallback onEditTap;
 
   const EditableOverlayItemWidget({
@@ -22,6 +23,7 @@ class EditableOverlayItemWidget extends ConsumerStatefulWidget {
     required this.item,
     required this.canvasSize,
     required this.currentPlaybackTime,
+    this.isSelected = false,
     required this.onEditTap,
   }) : super(key: key);
 
@@ -35,27 +37,43 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
   bool _isSnappingV = false;
   bool _isSnappingH = false;
 
-  void _onMatrixUpdate(Matrix4 m, Matrix4 tm, Matrix4 sm, Matrix4 rm) {
-    final translation = vector_math.Vector3.zero();
-    final rotation = vector_math.Quaternion.identity();
-    final scale = vector_math.Vector3.zero();
-    
-    m.decompose(translation, rotation, scale);
-    final eulerAngles = _getEulerAngles(rotation);
-    
-    double dx = translation.x;
-    double dy = translation.y;
+  double _baseScale = 1.0;
+  double _baseRotation = 0.0;
+  Offset _basePosition = Offset.zero;
 
-    // Haptic & Snapping Logic
-    // We assume the widget center is roughly at dx + 50, dy + 50 for simplicity if we don't measure exactly
-    // but a better approach is to check if it's near the center.
+  @override
+  void initState() {
+    super.initState();
+    _baseScale = widget.item.scale;
+    _baseRotation = widget.item.rotation;
+    _basePosition = widget.item.position;
+  }
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _baseScale = widget.item.scale;
+    _baseRotation = widget.item.rotation;
+    _basePosition = widget.item.position;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    double newScale = _baseScale * details.scale;
+    double newRotation = _baseRotation + details.rotation;
+    Offset newPosition = _basePosition + details.focalPointDelta;
+    
+    // We update _basePosition continuously for drag deltas to work smoothly
+    _basePosition = newPosition;
+
     final centerX = widget.canvasSize.width / 2;
     final centerY = widget.canvasSize.height / 2;
     
     bool snapV = false;
     bool snapH = false;
 
-    // Soft snap radius
+    // Use widget's approximate center based on its rendered position
+    // Since Positioned left/top are the top-left corner, we estimate center by adding 50
+    double dx = newPosition.dx;
+    double dy = newPosition.dy;
+
     if ((dx + 50 - centerX).abs() < 15) {
       dx = centerX - 50;
       snapV = true;
@@ -71,55 +89,56 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
     _isSnappingV = snapV;
     _isSnappingH = snapH;
 
-    // Notify parent for guidelines
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(guidelineProvider.notifier).state = {'v': snapV, 'h': snapH};
     });
 
     final updatedItem = widget.item.copyWith(
       position: Offset(dx, dy),
-      scale: scale.x,
-      rotation: eulerAngles.z,
+      scale: newScale,
+      rotation: newRotation,
     );
 
     ref.read(manualEditorProvider.notifier).updateOverlay(updatedItem);
   }
 
-  vector_math.Vector3 _getEulerAngles(vector_math.Quaternion q) {
-    double ysqr = q.y * q.y;
-    double t3 = 2.0 * (q.w * q.z + q.x * q.y);
-    double t4 = 1.0 - 2.0 * (ysqr + q.z * q.z);
-    return vector_math.Vector3(0, 0, math.atan2(t3, t4));
+  void _onScaleEnd(ScaleEndDetails details) {
+    _isSnappingV = false;
+    _isSnappingH = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(guidelineProvider.notifier).state = {'v': false, 'h': false};
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // 3. Interactive Overlay Canvas (Enhanced): Visibility logic
     final isVisible = widget.currentPlaybackTime >= widget.item.startTime && 
                       widget.currentPlaybackTime <= widget.item.endTime;
 
     if (!isVisible) return const SizedBox.shrink();
 
-    final matrix = Matrix4.identity()
-      ..translate(widget.item.position.dx, widget.item.position.dy)
-      ..rotateZ(widget.item.rotation)
-      ..scale(widget.item.scale);
-
     return Positioned(
-      left: 0,
-      top: 0,
-      child: Listener(
-        onPointerUp: (_) {
-          _isSnappingV = false;
-          _isSnappingH = false;
-          ref.read(guidelineProvider.notifier).state = {'v': false, 'h': false};
-        },
-        child: MatrixGestureDetector(
-          onMatrixUpdate: _onMatrixUpdate,
-          child: GestureDetector(
-            onTap: widget.onEditTap,
-            child: Transform(
-              transform: matrix,
+      left: widget.item.position.dx,
+      top: widget.item.position.dy,
+      child: GestureDetector(
+        onScaleStart: _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        onScaleEnd: _onScaleEnd,
+        onTap: widget.onEditTap,
+        child: Transform.rotate(
+          angle: widget.item.rotation,
+          child: Transform.scale(
+            scale: widget.item.scale,
+            child: Container(
+              decoration: widget.isSelected 
+                  ? BoxDecoration(
+                      border: Border.all(
+                        color: widget.item.type == OverlayType.emoji ? Colors.pinkAccent : Colors.blueAccent, 
+                        width: 2
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    )
+                  : null,
               child: _buildStyledContent(),
             ),
           ),
