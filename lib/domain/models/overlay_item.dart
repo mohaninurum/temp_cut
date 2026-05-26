@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum OverlayType { text, emoji, image }
+enum OverlayType { text, emoji, image, video, mainVideo, mainImage }
 enum TextStyleMode { normal, solid, glassmorphic, neon }
 
 class OverlayItem {
@@ -45,6 +45,7 @@ class OverlayItem {
   });
 
   OverlayItem copyWith({
+    OverlayType? type,
     Offset? position,
     double? scale,
     double? rotation,
@@ -61,7 +62,7 @@ class OverlayItem {
   }) {
     return OverlayItem(
       id: id,
-      type: type,
+      type: type ?? this.type,
       value: value ?? this.value,
       position: position ?? this.position,
       scale: scale ?? this.scale,

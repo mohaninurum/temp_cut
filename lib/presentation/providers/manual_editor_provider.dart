@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/overlay_item.dart';
 
 class ManualEditorState {
-  final String? backgroundAssetPath;
+  final List<OverlayItem> baseMedia;
   final Duration backgroundDuration;
   final List<OverlayItem> overlays;
   final bool isPlaying;
@@ -12,12 +12,10 @@ class ManualEditorState {
   final double baseVideoScale;
   final double baseVideoRotation;
   final Offset baseVideoPosition;
-  final Duration baseVideoTrimStart;
-  final Duration baseVideoTrimEnd;
 
   const ManualEditorState({
-    this.backgroundAssetPath,
-    this.backgroundDuration = const Duration(seconds: 15),
+    this.baseMedia = const [],
+    this.backgroundDuration = Duration.zero,
     required this.overlays,
     this.isPlaying = false,
     this.currentTime = Duration.zero,
@@ -25,14 +23,12 @@ class ManualEditorState {
     this.baseVideoScale = 1.0,
     this.baseVideoRotation = 0.0,
     this.baseVideoPosition = Offset.zero,
-    this.baseVideoTrimStart = Duration.zero,
-    this.baseVideoTrimEnd = const Duration(seconds: 15),
   });
 
   factory ManualEditorState.initial() {
     return const ManualEditorState(
-      backgroundAssetPath: null,
-      backgroundDuration: Duration(seconds: 15),
+      baseMedia: [],
+      backgroundDuration: Duration.zero,
       overlays: [],
       isPlaying: false,
       currentTime: Duration.zero,
@@ -40,13 +36,11 @@ class ManualEditorState {
       baseVideoScale: 1.0,
       baseVideoRotation: 0.0,
       baseVideoPosition: Offset.zero,
-      baseVideoTrimStart: Duration.zero,
-      baseVideoTrimEnd: Duration(seconds: 15),
     );
   }
 
   ManualEditorState copyWith({
-    String? backgroundAssetPath,
+    List<OverlayItem>? baseMedia,
     Duration? backgroundDuration,
     List<OverlayItem>? overlays,
     bool? isPlaying,
@@ -56,11 +50,9 @@ class ManualEditorState {
     double? baseVideoScale,
     double? baseVideoRotation,
     Offset? baseVideoPosition,
-    Duration? baseVideoTrimStart,
-    Duration? baseVideoTrimEnd,
   }) {
     return ManualEditorState(
-      backgroundAssetPath: backgroundAssetPath ?? this.backgroundAssetPath,
+      baseMedia: baseMedia ?? this.baseMedia,
       backgroundDuration: backgroundDuration ?? this.backgroundDuration,
       overlays: overlays ?? this.overlays,
       isPlaying: isPlaying ?? this.isPlaying,
@@ -69,8 +61,6 @@ class ManualEditorState {
       baseVideoScale: baseVideoScale ?? this.baseVideoScale,
       baseVideoRotation: baseVideoRotation ?? this.baseVideoRotation,
       baseVideoPosition: baseVideoPosition ?? this.baseVideoPosition,
-      baseVideoTrimStart: baseVideoTrimStart ?? this.baseVideoTrimStart,
-      baseVideoTrimEnd: baseVideoTrimEnd ?? this.baseVideoTrimEnd,
     );
   }
 }
@@ -78,10 +68,35 @@ class ManualEditorState {
 class ManualEditorStateNotifier extends StateNotifier<ManualEditorState> {
   ManualEditorStateNotifier() : super(ManualEditorState.initial());
 
-  void setBackgroundAsset(String path, {Duration? duration}) {
+  void addBaseMedia(OverlayItem media) {
+    final newBaseMedia = [...state.baseMedia, media];
+    _updateBaseMediaAndDuration(newBaseMedia);
+  }
+
+  void updateBaseMedia(OverlayItem updatedMedia) {
+    final newBaseMedia = state.baseMedia.map((item) {
+      if (item.id == updatedMedia.id) return updatedMedia;
+      return item;
+    }).toList();
+    _updateBaseMediaAndDuration(newBaseMedia);
+  }
+
+  void _updateBaseMediaAndDuration(List<OverlayItem> baseMedia) {
+    Duration currentStart = Duration.zero;
+    final List<OverlayItem> alignedMedia = [];
+
+    for (var item in baseMedia) {
+      final duration = item.endTime - item.startTime;
+      alignedMedia.add(item.copyWith(
+        startTime: currentStart,
+        endTime: currentStart + duration,
+      ));
+      currentStart += duration;
+    }
+
     state = state.copyWith(
-      backgroundAssetPath: path,
-      backgroundDuration: duration,
+      baseMedia: alignedMedia,
+      backgroundDuration: currentStart,
     );
   }
 
@@ -122,23 +137,6 @@ class ManualEditorStateNotifier extends StateNotifier<ManualEditorState> {
 
   void clearSelection() {
     state = state.copyWith(clearSelectedOverlayId: true);
-  }
-
-  void updateBaseVideo({double? scale, double? rotation, Offset? position}) {
-    state = state.copyWith(
-      baseVideoScale: scale ?? state.baseVideoScale,
-      baseVideoRotation: rotation ?? state.baseVideoRotation,
-      baseVideoPosition: position ?? state.baseVideoPosition,
-    );
-  }
-
-  void updateBaseVideoTrim(Duration start, Duration end) {
-    state = state.copyWith(
-      baseVideoTrimStart: start,
-      baseVideoTrimEnd: end,
-      // also update backgroundDuration so the timeline scales correctly
-      backgroundDuration: end - start,
-    );
   }
 }
 
