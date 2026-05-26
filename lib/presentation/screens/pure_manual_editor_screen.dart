@@ -1027,7 +1027,15 @@ class _PureManualEditorScreenState
             _buildToolbarActionMini(
               Icons.sync,
               'Replace',
-              () => _addImageOverlay(),
+              () async {
+                final picker = ImagePicker();
+                final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                if (pickedFile != null) {
+                  ref.read(manualEditorProvider.notifier).updateOverlay(
+                    item.copyWith(value: pickedFile.path),
+                  );
+                }
+              },
             ),
             _buildToolbarActionMini(Icons.animation, 'Motion', () {
               _showMotionBottomSheet(context, item);
