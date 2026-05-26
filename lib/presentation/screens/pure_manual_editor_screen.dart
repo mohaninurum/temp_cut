@@ -29,6 +29,11 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
   // Selected Item for Customizer
   String? _selectedOverlayId;
 
+  // Dragging state for smooth timeline updates
+  Duration? _dragInitialStartTime;
+  Duration? _dragInitialEndTime;
+  double _dragAccumulator = 0.0;
+
   Size _canvasSize = Size.zero;
 
   @override
@@ -266,7 +271,11 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
                     onChanged: (val) {
                       final newTime = Duration(milliseconds: val.toInt());
                       setState(() => _currentTime = newTime);
-                      _videoController?.seekTo(newTime);
+                    },
+                    onChangeEnd: (val) {
+                      if (_videoController != null) {
+                        _videoController!.seekTo(Duration(milliseconds: val.toInt()));
+                      }
                     },
                   ),
                 ),
@@ -276,9 +285,33 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
           // Tracks
           Expanded(
             child: ListView.builder(
-              itemCount: state.overlays.length,
+              itemCount: state.backgroundAssetPath != null ? state.overlays.length + 1 : state.overlays.length,
               itemBuilder: (context, index) {
-                final item = state.overlays[index];
+                if (state.backgroundAssetPath != null && index == 0) {
+                  final isVideo = state.backgroundAssetPath!.toLowerCase().endsWith('.mp4') || state.backgroundAssetPath!.toLowerCase().endsWith('.mov');
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Container(
+                      height: 30,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurpleAccent.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.white, width: 1),
+                      ),
+                      child: Center(
+                        child: Text(
+                          isVideo ? 'Main Video Track' : 'Main Image Track',
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final itemIndex = state.backgroundAssetPath != null ? index - 1 : index;
+                final item = state.overlays[itemIndex];
+                
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   child: LayoutBuilder(
@@ -300,12 +333,19 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
                               onTap: () {
                                 setState(() => _selectedOverlayId = item.id);
                               },
+                              onHorizontalDragStart: (details) {
+                                _dragInitialStartTime = item.startTime;
+                                _dragInitialEndTime = item.endTime;
+                                _dragAccumulator = 0.0;
+                              },
                               onHorizontalDragUpdate: (details) {
-                                final deltaMs = (details.delta.dx / trackWidth) * maxMs;
-                                final duration = item.endTime.inMilliseconds - item.startTime.inMilliseconds;
+                                if (_dragInitialStartTime == null || _dragInitialEndTime == null) return;
+                                _dragAccumulator += details.delta.dx;
+                                final deltaMs = (_dragAccumulator / trackWidth) * maxMs;
+                                final duration = _dragInitialEndTime!.inMilliseconds - _dragInitialStartTime!.inMilliseconds;
                                 
-                                int newStartMs = item.startTime.inMilliseconds + deltaMs.toInt();
-                                int newEndMs = item.endTime.inMilliseconds + deltaMs.toInt();
+                                int newStartMs = _dragInitialStartTime!.inMilliseconds + deltaMs.toInt();
+                                int newEndMs = _dragInitialEndTime!.inMilliseconds + deltaMs.toInt();
                                 
                                 if (newStartMs < 0) {
                                   newStartMs = 0;
@@ -319,6 +359,10 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
                                   startTime: Duration(milliseconds: newStartMs),
                                   endTime: Duration(milliseconds: newEndMs),
                                 ));
+                              },
+                              onHorizontalDragEnd: (_) {
+                                _dragInitialStartTime = null;
+                                _dragInitialEndTime = null;
                               },
                               child: Container(
                                 decoration: BoxDecoration(
@@ -340,13 +384,18 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
                             left: startPx.clamp(0, trackWidth) - 10,
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onHorizontalDragUpdate: (details) {
-                                final newStartPx = startPx + details.delta.dx;
-                                final newStartMs = (newStartPx / trackWidth) * maxMs;
-                                final clampedStart = newStartMs.toInt().clamp(0, item.endTime.inMilliseconds - 500);
-                                final newStart = Duration(milliseconds: clampedStart);
-                                ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(startTime: newStart));
+                              onHorizontalDragStart: (details) {
+                                _dragInitialStartTime = item.startTime;
+                                _dragAccumulator = 0.0;
                               },
+                              onHorizontalDragUpdate: (details) {
+                                if (_dragInitialStartTime == null) return;
+                                _dragAccumulator += details.delta.dx;
+                                final deltaMs = (_dragAccumulator / trackWidth) * maxMs;
+                                final clampedStart = (_dragInitialStartTime!.inMilliseconds + deltaMs.toInt()).clamp(0, item.endTime.inMilliseconds - 500);
+                                ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(startTime: Duration(milliseconds: clampedStart)));
+                              },
+                              onHorizontalDragEnd: (_) => _dragInitialStartTime = null,
                               child: Container(width: 20, height: 30, color: Colors.transparent, child: const Center(child: Icon(Icons.drag_indicator, size: 12, color: Colors.white))),
                             ),
                           ),
@@ -355,13 +404,18 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
                             left: endPx.clamp(0, trackWidth) - 10,
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onHorizontalDragUpdate: (details) {
-                                final newEndPx = endPx + details.delta.dx;
-                                final newEndMs = (newEndPx / trackWidth) * maxMs;
-                                final clampedEnd = newEndMs.toInt().clamp(item.startTime.inMilliseconds + 500, state.backgroundDuration.inMilliseconds);
-                                final newEnd = Duration(milliseconds: clampedEnd);
-                                ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(endTime: newEnd));
+                              onHorizontalDragStart: (details) {
+                                _dragInitialEndTime = item.endTime;
+                                _dragAccumulator = 0.0;
                               },
+                              onHorizontalDragUpdate: (details) {
+                                if (_dragInitialEndTime == null) return;
+                                _dragAccumulator += details.delta.dx;
+                                final deltaMs = (_dragAccumulator / trackWidth) * maxMs;
+                                final clampedEnd = (_dragInitialEndTime!.inMilliseconds + deltaMs.toInt()).clamp(item.startTime.inMilliseconds + 500, state.backgroundDuration.inMilliseconds);
+                                ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(endTime: Duration(milliseconds: clampedEnd)));
+                              },
+                              onHorizontalDragEnd: (_) => _dragInitialEndTime = null,
                               child: Container(width: 20, height: 30, color: Colors.transparent, child: const Center(child: Icon(Icons.drag_indicator, size: 12, color: Colors.white))),
                             ),
                           ),
@@ -511,13 +565,14 @@ class _PureManualEditorScreenState extends ConsumerState<PureManualEditorScreen>
             ),
           ),
           
-          // Customizer or Timeline Area
+          // Customizer Area
           if (_selectedOverlayId != null && selectedOverlay != null)
             selectedOverlay.type == OverlayType.emoji
                 ? _buildEmojiCustomizer(selectedOverlay)
-                : _buildTextCustomizer(selectedOverlay)
-          else
-            _buildTimelineTrack(state),
+                : _buildTextCustomizer(selectedOverlay),
+                
+          // Timeline Area (Always visible)
+          _buildTimelineTrack(state),
         ],
       ),
     );
