@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum OverlayType { text, emoji }
+enum OverlayType { text, emoji, image }
 enum TextStyleMode { normal, solid, glassmorphic, neon }
 
 class OverlayItem {
@@ -19,6 +19,12 @@ class OverlayItem {
   final TextStyleMode textStyleMode;
   final TextAlign textAlign;
   final double curveFactor; // 0.0 means straight, >0 means curved
+  
+  // Animation fields
+  final String animationIn;
+  final String animationOut;
+  final String animationLoop;
+  final double animationDuration;
 
   const OverlayItem({
     required this.id,
@@ -32,6 +38,10 @@ class OverlayItem {
     this.textStyleMode = TextStyleMode.normal,
     this.textAlign = TextAlign.center,
     this.curveFactor = 0.0,
+    this.animationIn = 'None',
+    this.animationOut = 'None',
+    this.animationLoop = 'None',
+    this.animationDuration = 0.6,
   });
 
   OverlayItem copyWith({
@@ -44,6 +54,10 @@ class OverlayItem {
     TextStyleMode? textStyleMode,
     TextAlign? textAlign,
     double? curveFactor,
+    String? animationIn,
+    String? animationOut,
+    String? animationLoop,
+    double? animationDuration,
   }) {
     return OverlayItem(
       id: id,
@@ -57,6 +71,10 @@ class OverlayItem {
       textStyleMode: textStyleMode ?? this.textStyleMode,
       textAlign: textAlign ?? this.textAlign,
       curveFactor: curveFactor ?? this.curveFactor,
+      animationIn: animationIn ?? this.animationIn,
+      animationOut: animationOut ?? this.animationOut,
+      animationLoop: animationLoop ?? this.animationLoop,
+      animationDuration: animationDuration ?? this.animationDuration,
     );
   }
 }
