@@ -1,6 +1,6 @@
 -keep class io.flutter.plugins.** { *; }
 -keep class com.mr.flutter.plugin.filepicker.** { *; }
--keep class com.baseflow.permissionhandler.** { *; }
+-keep class com.baseflow.** { *; }
 -keep class com.pichillilorenzo.flutter_inappwebview.** { *; }
 -keep class io.flutter.app.** { *; }
 -keep class io.flutter.plugin.**  { *; }
@@ -11,3 +11,6 @@
 -dontwarn io.flutter.plugin.**
 -dontwarn io.flutter.app.**
 -dontwarn com.google.android.play.core.**
+-keep class xyz.luan.audioplayers.** { *; }
+-keep class com.arthenica.ffmpegkit.flutter.** { *; }
+-keep class com.arthenica.ffmpegkit.** { *; }
