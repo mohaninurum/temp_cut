@@ -10,3 +10,4 @@
 -keep class io.flutter.plugins.*  { *; }
 -dontwarn io.flutter.plugin.**
 -dontwarn io.flutter.app.**
+-dontwarn com.google.android.play.core.**
