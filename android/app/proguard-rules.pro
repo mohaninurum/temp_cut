@@ -1,0 +1,12 @@
+-keep class io.flutter.plugins.** { *; }
+-keep class com.mr.flutter.plugin.filepicker.** { *; }
+-keep class com.baseflow.permissionhandler.** { *; }
+-keep class com.pichillilorenzo.flutter_inappwebview.** { *; }
+-keep class io.flutter.app.** { *; }
+-keep class io.flutter.plugin.**  { *; }
+-keep class io.flutter.util.**  { *; }
+-keep class io.flutter.view.**  { *; }
+-keep class io.flutter.**  { *; }
+-keep class io.flutter.plugins.*  { *; }
+-dontwarn io.flutter.plugin.**
+-dontwarn io.flutter.app.**

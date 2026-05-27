@@ -41,19 +41,42 @@ class _LandingScreenState extends State<LandingScreen> {
   @override
   void initState() {
     super.initState();
-    _requestPermissions();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestPermissions();
+    });
   }
 
   Future<void> _requestPermissions() async {
     // Request storage and media permissions
-    await [
-      Permission.storage,
-      Permission.camera,
-      Permission.microphone,
-      Permission.photos,
-      Permission.videos,
-      Permission.audio,
-    ].request();
+    try {
+      Map<Permission, PermissionStatus> statuses = await [
+        Permission.storage,
+        Permission.camera,
+        Permission.microphone,
+        Permission.photos,
+        Permission.videos,
+        Permission.audio,
+      ].request();
+      
+      bool allGranted = true;
+      statuses.forEach((key, value) {
+        if (!value.isGranted && !value.isLimited) {
+          allGranted = false;
+        }
+      });
+      
+      if (!allGranted && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Some permissions were denied. Media might not work properly.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Permission Error: $e')),
+        );
+      }
+    }
   }
 
   @override

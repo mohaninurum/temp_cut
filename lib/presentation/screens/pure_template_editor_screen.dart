@@ -58,25 +58,37 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
 
   // 1. Automated Multi-Slot Batch Picker
   Future<void> _batchImportMedia(VideoTemplate template) async {
-    final List<XFile> mediaList = await _picker.pickMultipleMedia();
-    if (mediaList.isEmpty) return;
+    try {
+      final List<XFile> mediaList = await _picker.pickMultipleMedia();
+      if (mediaList.isEmpty) return;
 
-    final List<String> slotIds = template.mediaSlots.map((s) => s.slotId).toList();
-    final List<String> paths = mediaList.map((m) => m.path).toList();
+      final List<String> slotIds = template.mediaSlots.map((s) => s.slotId).toList();
+      final List<String> paths = mediaList.map((m) => m.path).toList();
 
-    ref.read(editorStateProvider.notifier).batchFillSlots(slotIds, paths);
+      ref.read(editorStateProvider.notifier).batchFillSlots(slotIds, paths);
 
-    // Initialize all video streams concurrently
-    for (int i = 0; i < slotIds.length && i < paths.length; i++) {
-      await _initializeSlotVideo(slotIds[i], paths[i]);
+      // Initialize all video streams concurrently
+      for (int i = 0; i < slotIds.length && i < paths.length; i++) {
+        await _initializeSlotVideo(slotIds[i], paths[i]);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error importing media: $e')));
+      }
     }
   }
 
   Future<void> _pickMediaForSlot(String slotId) async {
-    final XFile? media = await _picker.pickMedia();
-    if (media != null) {
-      ref.read(editorStateProvider.notifier).fillTemplateSlot(slotId, media.path);
-      _initializeSlotVideo(slotId, media.path);
+    try {
+      final XFile? media = await _picker.pickMedia();
+      if (media != null) {
+        ref.read(editorStateProvider.notifier).fillTemplateSlot(slotId, media.path);
+        _initializeSlotVideo(slotId, media.path);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error picking media: $e')));
+      }
     }
   }
 
@@ -377,11 +389,17 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
   }
 
   Future<void> _pickCustomAudio() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.audio);
-    if (result != null && result.files.single.path != null) {
-      ref.read(editorStateProvider.notifier).setCustomAudio(result.files.single.path!);
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.audio);
+      if (result != null && result.files.single.path != null) {
+        ref.read(editorStateProvider.notifier).setCustomAudio(result.files.single.path!);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Custom audio selected!')));
+        }
+      }
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Custom audio selected!')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error picking audio: $e')));
       }
     }
   }
