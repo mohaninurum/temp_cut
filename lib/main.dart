@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'presentation/screens/template_browser_screen.dart';
 import 'presentation/screens/pure_manual_editor_screen.dart';
@@ -29,8 +30,31 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class LandingScreen extends StatelessWidget {
+class LandingScreen extends StatefulWidget {
   const LandingScreen({Key? key}) : super(key: key);
+
+  @override
+  State<LandingScreen> createState() => _LandingScreenState();
+}
+
+class _LandingScreenState extends State<LandingScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _requestPermissions();
+  }
+
+  Future<void> _requestPermissions() async {
+    // Request storage and media permissions
+    await [
+      Permission.storage,
+      Permission.camera,
+      Permission.microphone,
+      Permission.photos,
+      Permission.videos,
+      Permission.audio,
+    ].request();
+  }
 
   @override
   Widget build(BuildContext context) {
