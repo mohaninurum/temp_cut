@@ -38,6 +38,12 @@ class _PureManualEditorScreenState
   bool _isScrollingTimeline = false;
   static const double _pixelsPerSecond = 50.0;
   bool _isReady = false;
+  bool _isEditingText = false;
+
+  // Variables for tracking base media gestures
+  double _baseMediaStartScale = 1.0;
+  double _baseMediaStartRotation = 0.0;
+  Offset _baseMediaStartPosition = Offset.zero;
 
   @override
   void initState() {
@@ -402,99 +408,8 @@ class _PureManualEditorScreenState
     }
   }
 
-  Widget _buildTextCustomizer(OverlayItem item) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: const Color(0xFF181818),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Style',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => ref
-                    .read(manualEditorProvider.notifier)
-                    .setSelectedOverlay(null),
-              ),
-            ],
-          ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: TextStyleMode.values.map((mode) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: ChoiceChip(
-                    label: Text(
-                      mode.name,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    selectedColor: Colors.blueAccent,
-                    backgroundColor: Colors.grey[900],
-                    selected: item.textStyleMode == mode,
-                    onSelected: (selected) {
-                      if (selected) {
-                        ref
-                            .read(manualEditorProvider.notifier)
-                            .updateOverlay(item.copyWith(textStyleMode: mode));
-                      }
-                    },
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Text('Align:', style: TextStyle(color: Colors.white)),
-              IconButton(
-                icon: Icon(
-                  Icons.format_align_left,
-                  color: item.textAlign == TextAlign.left
-                      ? Colors.blueAccent
-                      : Colors.white,
-                ),
-                onPressed: () => ref
-                    .read(manualEditorProvider.notifier)
-                    .updateOverlay(item.copyWith(textAlign: TextAlign.left)),
-              ),
-              IconButton(
-                icon: Icon(
-                  Icons.format_align_center,
-                  color: item.textAlign == TextAlign.center
-                      ? Colors.blueAccent
-                      : Colors.white,
-                ),
-                onPressed: () => ref
-                    .read(manualEditorProvider.notifier)
-                    .updateOverlay(item.copyWith(textAlign: TextAlign.center)),
-              ),
-              IconButton(
-                icon: Icon(
-                  Icons.format_align_right,
-                  color: item.textAlign == TextAlign.right
-                      ? Colors.blueAccent
-                      : Colors.white,
-                ),
-                onPressed: () => ref
-                    .read(manualEditorProvider.notifier)
-                    .updateOverlay(item.copyWith(textAlign: TextAlign.right)),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+  Widget _buildTextCustomizer(String itemId) {
+    return _TextCustomizerWidget(itemId: itemId);
   }
 
   Widget _buildTrackIconRow({
@@ -1194,16 +1109,9 @@ class _PureManualEditorScreenState
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _buildToolbarActionMini(Icons.edit_square, 'Edit', () {
-              // We could show the customizer here using a modal bottom sheet!
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (context) => Container(
-                  height: MediaQuery.of(context).size.height * 0.4,
-                  child: _buildTextCustomizer(item),
-                ),
-              );
+              setState(() {
+                _isEditingText = true;
+              });
             }),
             _buildToolbarActionMini(Icons.animation, 'Motion', () {
               _showMotionBottomSheet(context, item);
@@ -2156,56 +2064,111 @@ class _PureManualEditorScreenState
 
                                   return Positioned.fill(
                                     child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
                                       onTap: () => ref
                                           .read(manualEditorProvider.notifier)
                                           .setSelectedOverlay(activeMedia.id),
-                                      child: Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          SizedBox.expand(
-                                            child: isVideo
-                                                ? (controller != null &&
-                                                          controller
-                                                              .value
-                                                              .isInitialized
-                                                      ? FittedBox(
+                                      onScaleStart: (details) {
+                                        if (state.selectedOverlayId == null) return;
+                                        if (state.selectedOverlayId == activeMedia.id) {
+                                          _baseMediaStartScale = activeMedia.scale;
+                                          _baseMediaStartRotation = activeMedia.rotation;
+                                          _baseMediaStartPosition = activeMedia.position;
+                                        } else {
+                                          try {
+                                            final selectedOverlay = state.overlays.firstWhere((o) => o.id == state.selectedOverlayId);
+                                            _baseMediaStartScale = selectedOverlay.scale;
+                                            _baseMediaStartRotation = selectedOverlay.rotation;
+                                            _baseMediaStartPosition = selectedOverlay.position;
+                                          } catch (_) {}
+                                        }
+                                      },
+                                      onScaleUpdate: (details) {
+                                        if (state.selectedOverlayId == null) return;
+                                        
+                                        final newScale = (_baseMediaStartScale * details.scale).clamp(0.1, 5.0);
+                                        final newRotation = _baseMediaStartRotation + details.rotation;
+                                        final newPosition = _baseMediaStartPosition + details.focalPointDelta;
+                                        
+                                        _baseMediaStartPosition = newPosition;
+
+                                        if (state.selectedOverlayId == activeMedia.id) {
+                                          ref.read(manualEditorProvider.notifier).updateBaseMedia(
+                                            activeMedia.copyWith(
+                                              scale: newScale,
+                                              rotation: newRotation,
+                                              position: newPosition,
+                                            )
+                                          );
+                                        } else {
+                                          try {
+                                            final selectedOverlay = state.overlays.firstWhere((o) => o.id == state.selectedOverlayId);
+                                            ref.read(manualEditorProvider.notifier).updateOverlay(
+                                              selectedOverlay.copyWith(
+                                                scale: newScale,
+                                                rotation: newRotation,
+                                                position: newPosition,
+                                              )
+                                            );
+                                          } catch (_) {}
+                                        }
+                                      },
+                                      child: Transform.translate(
+                                        offset: activeMedia.position,
+                                        child: Transform.rotate(
+                                          angle: activeMedia.rotation,
+                                          child: Transform.scale(
+                                            scale: activeMedia.scale,
+                                            child: Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                SizedBox.expand(
+                                                  child: isVideo
+                                                      ? (controller != null &&
+                                                                controller
+                                                                    .value
+                                                                    .isInitialized
+                                                          ? FittedBox(
+                                                              fit: BoxFit.cover,
+                                                              child: SizedBox(
+                                                                width: controller
+                                                                    .value
+                                                                    .size
+                                                                    .width,
+                                                                height: controller
+                                                                    .value
+                                                                    .size
+                                                                    .height,
+                                                                child: VideoPlayer(
+                                                                  controller,
+                                                                ),
+                                                              ),
+                                                            )
+                                                          : const Center(
+                                                              child:
+                                                                  CircularProgressIndicator(),
+                                                            ))
+                                                      : Image.file(
+                                                          File(activeMedia.value),
                                                           fit: BoxFit.cover,
-                                                          child: SizedBox(
-                                                            width: controller
-                                                                .value
-                                                                .size
-                                                                .width,
-                                                            height: controller
-                                                                .value
-                                                                .size
-                                                                .height,
-                                                            child: VideoPlayer(
-                                                              controller,
-                                                            ),
-                                                          ),
-                                                        )
-                                                      : const Center(
-                                                          child:
-                                                              CircularProgressIndicator(),
-                                                        ))
-                                                : Image.file(
-                                                    File(activeMedia.value),
-                                                    fit: BoxFit.cover,
-                                                  ),
-                                          ),
-                                          if (state.selectedOverlayId ==
-                                              activeMedia.id)
-                                            Positioned.fill(
-                                              child: Container(
-                                                decoration: BoxDecoration(
-                                                  border: Border.all(
-                                                    color: Colors.white,
-                                                    width: 1.5,
-                                                  ),
+                                                        ),
                                                 ),
-                                              ),
+                                                if (state.selectedOverlayId ==
+                                                    activeMedia.id)
+                                                  Positioned.fill(
+                                                    child: Container(
+                                                      decoration: BoxDecoration(
+                                                        border: Border.all(
+                                                          color: Colors.white,
+                                                          width: 1.5,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
                                             ),
-                                        ],
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   );
@@ -2265,6 +2228,9 @@ class _PureManualEditorScreenState
                                   onEditTap: () => ref
                                       .read(manualEditorProvider.notifier)
                                       .setSelectedOverlay(overlay.id),
+                                  onUpdate: (updatedItem) => ref
+                                      .read(manualEditorProvider.notifier)
+                                      .updateOverlay(updatedItem),
                                 ),
                             ],
                           ),
@@ -2395,7 +2361,17 @@ class _PureManualEditorScreenState
                 ),
                 child: _buildTextToolbar(selectedOverlay),
               ),
-          Expanded(flex: 2, child: _buildTimelineGrid(state)),
+          if (_isEditingText && selectedOverlay != null && selectedOverlay.type == OverlayType.text)
+            Expanded(flex: 2, child: _TextCustomizerWidget(
+              itemId: selectedOverlay.id,
+              onClose: () {
+                setState(() {
+                  _isEditingText = false;
+                });
+              },
+            ))
+          else
+            Expanded(flex: 2, child: _buildTimelineGrid(state)),
 
           // Bottom Toolbar
           Container(
@@ -2420,6 +2396,150 @@ class _PureManualEditorScreenState
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TextCustomizerWidget extends ConsumerStatefulWidget {
+  final String itemId;
+  final VoidCallback? onClose;
+  const _TextCustomizerWidget({Key? key, required this.itemId, this.onClose}) : super(key: key);
+
+  @override
+  ConsumerState<_TextCustomizerWidget> createState() => _TextCustomizerWidgetState();
+}
+
+class _TextCustomizerWidgetState extends ConsumerState<_TextCustomizerWidget> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    final item = ref.read(manualEditorProvider).overlays.firstWhere((o) => o.id == widget.itemId);
+    _controller = TextEditingController(text: item.value);
+    // Select all text by default so typing replaces it
+    if (_controller.text.isNotEmpty) {
+      _controller.selection = TextSelection(baseOffset: 0, extentOffset: _controller.text.length);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(manualEditorProvider);
+    final item = state.overlays.firstWhere((o) => o.id == widget.itemId, orElse: () => state.overlays.first);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        color: const Color(0xFF181818),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Edit Text',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () {
+                    if (widget.onClose != null) {
+                      widget.onClose!();
+                    } else {
+                      ref.read(manualEditorProvider.notifier).setSelectedOverlay(null);
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+              ],
+            ),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'Enter text here',
+                hintStyle: TextStyle(color: Colors.white54),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+              ),
+              onChanged: (val) {
+                ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(value: val));
+              },
+            ),
+            const SizedBox(height: 16),
+            const Text('Style', style: TextStyle(color: Colors.white70, fontSize: 12)),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: TextStyleMode.values.map((mode) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: ChoiceChip(
+                      label: Text(
+                        mode.name,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      selectedColor: Colors.blueAccent,
+                      backgroundColor: Colors.grey[900],
+                      selected: item.textStyleMode == mode,
+                      onSelected: (selected) {
+                        if (selected) {
+                          ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(textStyleMode: mode));
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Align:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_align_left,
+                    color: item.textAlign == TextAlign.left ? Colors.blueAccent : Colors.white,
+                  ),
+                  onPressed: () => ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(textAlign: TextAlign.left)),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_align_center,
+                    color: item.textAlign == TextAlign.center ? Colors.blueAccent : Colors.white,
+                  ),
+                  onPressed: () => ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(textAlign: TextAlign.center)),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_align_right,
+                    color: item.textAlign == TextAlign.right ? Colors.blueAccent : Colors.white,
+                  ),
+                  onPressed: () => ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(textAlign: TextAlign.right)),
+                ),
+              ],
+            ),
+          ],
+        ),
+       ),
       ),
     );
   }

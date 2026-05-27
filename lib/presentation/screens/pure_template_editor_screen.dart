@@ -9,10 +9,14 @@ import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 
+import 'package:uuid/uuid.dart';
+
 import '../../domain/models/video_template.dart';
 import '../../domain/models/template_slot.dart';
+import '../../domain/models/overlay_item.dart';
 import '../providers/editor_state_provider.dart';
 import '../../services/ffmpeg_export_service.dart';
+import '../widgets/editable_overlay_item.dart';
 
 class PureTemplateEditorScreen extends ConsumerStatefulWidget {
   const PureTemplateEditorScreen({Key? key}) : super(key: key);
@@ -240,6 +244,71 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
     );
   }
 
+  void _addTextOverlay(Duration backgroundDuration) {
+    String input = 'New Text';
+    final state = ref.read(editorStateProvider);
+    final textOverlays = state.overlays.where((o) => o.type == OverlayType.text);
+    
+    Duration startTime = Duration.zero;
+    if (textOverlays.isNotEmpty) {
+      startTime = textOverlays.map((o) => o.endTime).reduce((a, b) => a > b ? a : b);
+    }
+
+    Duration endTime = startTime + const Duration(seconds: 3);
+    if (endTime > backgroundDuration) {
+      endTime = backgroundDuration;
+      if (startTime >= backgroundDuration) {
+        startTime = backgroundDuration - const Duration(seconds: 3);
+        if (startTime.isNegative) startTime = Duration.zero;
+      }
+    }
+
+    ref.read(editorStateProvider.notifier).addOverlay(
+      OverlayItem(
+        id: const Uuid().v4(),
+        type: OverlayType.text,
+        value: input,
+        position: const Offset(100, 200),
+        startTime: startTime,
+        endTime: endTime,
+      ),
+    );
+  }
+
+  Future<void> _addImageOverlay(Duration backgroundDuration) async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      final state = ref.read(editorStateProvider);
+      final imageOverlays = state.overlays.where((o) => o.type == OverlayType.image);
+      
+      Duration startTime = Duration.zero;
+      if (imageOverlays.isNotEmpty) {
+        startTime = imageOverlays.map((o) => o.endTime).reduce((a, b) => a > b ? a : b);
+      }
+
+      Duration endTime = startTime + const Duration(seconds: 3);
+      if (endTime > backgroundDuration) {
+        endTime = backgroundDuration;
+        if (startTime >= backgroundDuration) {
+          startTime = backgroundDuration - const Duration(seconds: 3);
+          if (startTime.isNegative) startTime = Duration.zero;
+        }
+      }
+
+      ref.read(editorStateProvider.notifier).addOverlay(
+        OverlayItem(
+          id: const Uuid().v4(),
+          type: OverlayType.image,
+          value: pickedFile.path,
+          position: const Offset(100, 200),
+          scale: 1.0,
+          startTime: startTime,
+          endTime: endTime,
+        ),
+      );
+    }
+  }
+
   Widget _buildPreviewCanvas(VideoTemplate template, Map<String, String> filledSlots) {
     final activeSlotId = _getActiveSlotId(template);
     final activeAssetPath = activeSlotId != null ? filledSlots[activeSlotId] : null;
@@ -298,18 +367,31 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
                     child: Text(
                       'Preview\n${(_currentPreviewTime.inMilliseconds / 1000).toStringAsFixed(1)}s / ${(template.totalDuration.inMilliseconds / 1000).toStringAsFixed(1)}s',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white54, fontSize: 16),
+                      style: const TextStyle(color: Colors.white54, fontSize: 18),
                     ),
                   ),
                 ),
 
-              // Dynamic Captions Layer
+              // Dynamic Captions (Predefined in Template)
               for (final text in activeTexts)
                 Positioned(
                   left: constraints.maxWidth * text.xPercentage,
                   top: constraints.maxHeight * text.yPercentage,
                   child: _buildDynamicText(text),
                 ),
+
+              // User Custom Overlays (Text / Image)
+              for (final overlay in ref.read(editorStateProvider).overlays)
+                if (_currentPreviewTime >= overlay.startTime && _currentPreviewTime < overlay.endTime)
+                  EditableOverlayItemWidget(
+                    key: ValueKey(overlay.id),
+                    item: overlay,
+                    canvasSize: _canvasSize,
+                    currentPlaybackTime: _currentPreviewTime,
+                    isSelected: ref.read(editorStateProvider).selectedSlotId == overlay.id,
+                    onEditTap: () => ref.read(editorStateProvider.notifier).setSelectedSlot(overlay.id),
+                    onUpdate: (updatedItem) => ref.read(editorStateProvider.notifier).updateOverlay(updatedItem),
+                  ),
             ],
           ),
         );
@@ -404,7 +486,164 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
     }
   }
 
-  Widget _buildTemplateSlotTracker(VideoTemplate template, Map<String, String> filledSlots, String? customAudioPath) {
+  Widget _buildToolbarActionMini(IconData icon, String label, VoidCallback onTap, {Color color = Colors.white}) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(color: color, fontSize: 10)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlotToolbar(String slotId, VideoTemplate template) {
+    return Container(
+      height: 56,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E64CC), // CapCut blue style
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 10)],
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildToolbarActionMini(Icons.sync, 'Replace', () {
+              _pickMediaForSlot(slotId);
+            }),
+            _buildToolbarActionMini(Icons.content_cut, 'Trim', () {}),
+            _buildToolbarActionMini(Icons.speed, 'Speed', () {}),
+            _buildToolbarActionMini(Icons.volume_up, 'Volume', () {}),
+            _buildToolbarActionMini(Icons.animation, 'Animation', () {
+               final state = ref.read(editorStateProvider);
+               final currentTrans = state.slotTransitions[slotId] ?? 'None';
+               _showTransitionBottomSheet(slotId, currentTrans);
+            }),
+            _buildToolbarActionMini(Icons.delete_outline, 'Delete', () {
+              ref.read(editorStateProvider.notifier).removeTemplateSlot(slotId);
+              ref.read(editorStateProvider.notifier).clearSelection();
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showTransitionBottomSheet(String slotId, String currentTransition) {
+    if (_isPlaying) {
+      _togglePlayback(ref.read(editorStateProvider).activeTemplate!, ref.read(editorStateProvider).customAudioPath);
+    }
+
+    final transitions = [
+      {'name': 'None', 'icon': Icons.not_interested},
+      {'name': 'Fade', 'icon': Icons.compare_arrows},
+      {'name': 'Scale', 'icon': Icons.fit_screen},
+      {'name': 'Spin', 'icon': Icons.rotate_right},
+      {'name': 'Slide', 'icon': Icons.arrow_downward},
+      {'name': 'Reveal', 'icon': Icons.ad_units},
+      {'name': 'Gradient', 'icon': Icons.gradient},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Container(
+          height: 200,
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Center(
+                child: Text(
+                  'Select Transition',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 85,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: transitions.length,
+                  itemBuilder: (context, index) {
+                    final trans = transitions[index];
+                    final isSelected = currentTransition == trans['name'];
+                    return GestureDetector(
+                      onTap: () {
+                        ref.read(editorStateProvider.notifier).setSlotTransition(slotId, trans['name'] as String);
+                        Navigator.pop(context);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: Colors.white10,
+                                borderRadius: BorderRadius.circular(12),
+                                border: isSelected ? Border.all(color: Colors.blueAccent, width: 1.5) : null,
+                              ),
+                              child: Icon(
+                                trans['icon'] as IconData,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              trans['name'] as String,
+                              style: TextStyle(
+                                color: isSelected ? Colors.white : Colors.white54,
+                                fontSize: 11,
+                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTemplateSlotTracker(VideoTemplate template, Map<String, String> filledSlots, Map<String, String> slotTransitions, String? customAudioPath, String? selectedSlotId) {
     return Column(
       children: [
         _buildWaveformTrack(template),
@@ -466,14 +705,26 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
                     final durationSec = (slot.endTime - slot.startTime).inMilliseconds / 1000;
                     final assetPath = filledSlots[slot.slotId];
 
-                    return GestureDetector(
-                      onTap: () => _pickMediaForSlot(slot.slotId),
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            if (isFilled) {
+                              ref.read(editorStateProvider.notifier).setSelectedSlot(slot.slotId);
+                            } else {
+                              _pickMediaForSlot(slot.slotId);
+                            }
+                          },
                       child: Container(
                         width: 70,
                         margin: const EdgeInsets.only(right: 12),
                         decoration: BoxDecoration(
                           color: isFilled ? Colors.transparent : Colors.grey[900],
-                          border: Border.all(color: isFilled ? Colors.white70 : Colors.white24, width: 2),
+                          border: Border.all(
+                            color: selectedSlotId == slot.slotId ? Colors.yellowAccent : (isFilled ? Colors.white70 : Colors.white24), 
+                            width: selectedSlotId == slot.slotId ? 2.5 : 2,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                           image: isFilled && assetPath != null && (assetPath.toLowerCase().endsWith('.jpg') || assetPath.toLowerCase().endsWith('.png'))
                               ? DecorationImage(image: FileImage(File(assetPath)), fit: BoxFit.cover)
@@ -501,8 +752,36 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
                           ],
                         ),
                       ),
-                    );
-                  },
+                    ),
+                    if (index < template.mediaSlots.length - 1)
+                      GestureDetector(
+                        onTap: () {
+                          final currentTrans = slotTransitions[slot.slotId] ?? 'None';
+                          _showTransitionBottomSheet(slot.slotId, currentTrans);
+                        },
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          margin: const EdgeInsets.only(right: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.black, width: 1.5),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              (slotTransitions[slot.slotId] != null && slotTransitions[slot.slotId] != 'None')
+                                  ? Icons.compare
+                                  : Icons.add,
+                              size: 16,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
                 ),
               ),
             ],
@@ -550,16 +829,46 @@ class _PureTemplateEditorScreenState extends ConsumerState<PureTemplateEditorScr
             children: [
               // Main Canvas area
               Expanded(
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: 9 / 16,
-                    child: _buildPreviewCanvas(activeTemplate, editorState.filledSlotAssets),
+                child: GestureDetector(
+                  onTap: () => ref.read(editorStateProvider.notifier).clearSelection(),
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 9 / 16,
+                      child: _buildPreviewCanvas(activeTemplate, editorState.filledSlotAssets),
+                    ),
                   ),
                 ),
               ),
               
+              if (editorState.selectedSlotId != null)
+                _buildSlotToolbar(editorState.selectedSlotId!, activeTemplate),
+
+              // Main Add Overlay Toolbar
+              Container(
+                height: 48,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.white10),
+                      icon: const Icon(Icons.text_fields, color: Colors.white),
+                      label: const Text('Add Text', style: TextStyle(color: Colors.white)),
+                      onPressed: () => _addTextOverlay(activeTemplate.totalDuration),
+                    ),
+                    const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.white10),
+                      icon: const Icon(Icons.image, color: Colors.white),
+                      label: const Text('Add Image', style: TextStyle(color: Colors.white)),
+                      onPressed: () => _addImageOverlay(activeTemplate.totalDuration),
+                    ),
+                  ],
+                ),
+              ),
+
               // Timeline tracker area
-              _buildTemplateSlotTracker(activeTemplate, editorState.filledSlotAssets, customAudioPath),
+              _buildTemplateSlotTracker(activeTemplate, editorState.filledSlotAssets, editorState.slotTransitions, customAudioPath, editorState.selectedSlotId),
             ],
           ),
           

@@ -7,7 +7,6 @@ import 'package:matrix_gesture_detector/matrix_gesture_detector.dart';
 import 'package:vector_math/vector_math_64.dart' as vector_math;
 
 import '../../domain/models/overlay_item.dart';
-import '../providers/manual_editor_provider.dart';
 
 // Provides guideline visibility state to the parent screen
 final guidelineProvider = StateProvider<Map<String, bool>>((ref) => {'v': false, 'h': false});
@@ -18,6 +17,7 @@ class EditableOverlayItemWidget extends ConsumerStatefulWidget {
   final Duration currentPlaybackTime;
   final bool isSelected;
   final VoidCallback onEditTap;
+  final void Function(OverlayItem)? onUpdate;
 
   const EditableOverlayItemWidget({
     Key? key,
@@ -26,6 +26,7 @@ class EditableOverlayItemWidget extends ConsumerStatefulWidget {
     required this.currentPlaybackTime,
     this.isSelected = false,
     required this.onEditTap,
+    this.onUpdate,
   }) : super(key: key);
 
   @override
@@ -103,7 +104,9 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
       rotation: newRotation,
     );
 
-    ref.read(manualEditorProvider.notifier).updateOverlay(updatedItem);
+    if (widget.onUpdate != null) {
+      widget.onUpdate!(updatedItem);
+    }
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
@@ -140,12 +143,14 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
     double newScale = (_baseScale * scaleDelta).clamp(0.1, 5.0);
     double newRotation = _baseRotation + angleDelta;
 
-    ref.read(manualEditorProvider.notifier).updateOverlay(
-      widget.item.copyWith(
-        scale: newScale,
-        rotation: newRotation,
-      ),
-    );
+    if (widget.onUpdate != null) {
+      widget.onUpdate!(
+        widget.item.copyWith(
+          scale: newScale,
+          rotation: newRotation,
+        ),
+      );
+    }
   }
 
   @override
@@ -159,6 +164,7 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
       left: widget.item.position.dx,
       top: widget.item.position.dy,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onScaleStart: _onScaleStart,
         onScaleUpdate: _onScaleUpdate,
         onScaleEnd: _onScaleEnd,
