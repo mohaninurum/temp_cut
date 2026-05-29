@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum OverlayType { text, emoji, image, video, mainVideo, mainImage }
+enum OverlayType { text, emoji, image, video, mainVideo, mainImage, audio }
 enum TextStyleMode { normal, solid, glassmorphic, neon }
 
 class OverlayItem {

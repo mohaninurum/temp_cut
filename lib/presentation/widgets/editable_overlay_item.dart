@@ -54,18 +54,12 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
   double _initialDistance = 1.0;
   double _initialAngle = 0.0;
 
-  void _onScaleStart(ScaleStartDetails details) {
-    _baseScale = widget.item.scale;
-    _baseRotation = widget.item.rotation;
+  void _onItemPanStart(DragStartDetails details) {
     _basePosition = widget.item.position;
   }
 
-  void _onScaleUpdate(ScaleUpdateDetails details) {
-    double newScale = _baseScale * details.scale;
-    double newRotation = _baseRotation + details.rotation;
-    Offset newPosition = _basePosition + details.focalPointDelta;
-    
-    // We update _basePosition continuously for drag deltas to work smoothly
+  void _onItemPanUpdate(DragUpdateDetails details) {
+    Offset newPosition = _basePosition + details.delta;
     _basePosition = newPosition;
 
     final centerX = widget.canvasSize.width / 2;
@@ -100,8 +94,6 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
 
     final updatedItem = widget.item.copyWith(
       position: Offset(dx, dy),
-      scale: newScale,
-      rotation: newRotation,
     );
 
     if (widget.onUpdate != null) {
@@ -109,7 +101,7 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
     }
   }
 
-  void _onScaleEnd(ScaleEndDetails details) {
+  void _onItemPanEnd(DragEndDetails details) {
     _isSnappingV = false;
     _isSnappingH = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -130,23 +122,38 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
     }
   }
 
-  void _onHandlePanUpdate(DragUpdateDetails details) {
+  void _onResizePanUpdate(DragUpdateDetails details) {
     if (_initialDistance == 0) return;
     
     final currentVector = details.globalPosition - _widgetCenterGlobal;
     final currentDistance = currentVector.distance;
-    final currentAngle = currentVector.direction;
 
     final scaleDelta = currentDistance / _initialDistance;
-    final angleDelta = currentAngle - _initialAngle;
 
     double newScale = (_baseScale * scaleDelta).clamp(0.1, 5.0);
-    double newRotation = _baseRotation + angleDelta;
 
     if (widget.onUpdate != null) {
       widget.onUpdate!(
         widget.item.copyWith(
           scale: newScale,
+        ),
+      );
+    }
+  }
+
+  void _onRotatePanUpdate(DragUpdateDetails details) {
+    if (_initialDistance == 0) return;
+    
+    final currentVector = details.globalPosition - _widgetCenterGlobal;
+    final currentAngle = currentVector.direction;
+
+    final angleDelta = currentAngle - _initialAngle;
+
+    double newRotation = _baseRotation + angleDelta;
+
+    if (widget.onUpdate != null) {
+      widget.onUpdate!(
+        widget.item.copyWith(
           rotation: newRotation,
         ),
       );
@@ -155,6 +162,8 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
 
   @override
   Widget build(BuildContext context) {
+    if (widget.item.type == OverlayType.audio) return const SizedBox.shrink();
+
     final isVisible = widget.currentPlaybackTime >= widget.item.startTime && 
                       widget.currentPlaybackTime <= widget.item.endTime;
 
@@ -165,9 +174,9 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
       top: widget.item.position.dy,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onScaleStart: _onScaleStart,
-        onScaleUpdate: _onScaleUpdate,
-        onScaleEnd: _onScaleEnd,
+        onPanStart: _onItemPanStart,
+        onPanUpdate: _onItemPanUpdate,
+        onPanEnd: _onItemPanEnd,
         onTap: widget.onEditTap,
         child: Transform.rotate(
           angle: widget.item.rotation,
@@ -179,45 +188,85 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
                         clipBehavior: Clip.none,
                         children: [
                           Container(
+                            margin: const EdgeInsets.all(32),
                             decoration: BoxDecoration(
                               border: Border.all(color: Colors.white, width: 1.5),
                             ),
                             child: _buildStyledContent(),
                           ),
-                          Positioned(top: -6, left: -6, child: _buildHandle()),
-                          Positioned(top: -6, right: -6, child: _buildHandle()),
-                          Positioned(bottom: -6, left: -6, child: _buildHandle()),
                           Positioned(
-                            bottom: -12, 
-                            right: -12, 
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onPanStart: _onHandlePanStart,
-                              onPanUpdate: _onHandlePanUpdate,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)],
+                            top: 8, left: 8, 
+                            child: Transform.scale(scale: 1.0 / widget.item.scale, child: _buildCornerHandle()),
+                          ),
+                          Positioned(
+                            top: 8, right: 8, 
+                            child: Transform.scale(scale: 1.0 / widget.item.scale, child: _buildCornerHandle()),
+                          ),
+                          Positioned(
+                            bottom: 8, left: 8, 
+                            child: Transform.scale(scale: 1.0 / widget.item.scale, child: _buildCornerHandle()),
+                          ),
+                          Positioned(
+                            bottom: 0, 
+                            right: 0, 
+                            child: Transform.scale(
+                              scale: 1.0 / widget.item.scale,
+                              alignment: Alignment.bottomRight,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: _onHandlePanStart,
+                                onPanUpdate: _onResizePanUpdate,
+                                child: Container(
+                                  color: Colors.transparent,
+                                  width: 64,
+                                  height: 64,
+                                  alignment: Alignment.bottomRight,
+                                  padding: const EdgeInsets.only(right: 12, bottom: 12),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)],
+                                    ),
+                                    child: const Icon(Icons.zoom_out_map, color: Colors.black, size: 16),
+                                  ),
                                 ),
-                                child: const Icon(Icons.zoom_out_map, color: Colors.black, size: 14),
                               ),
                             ),
                           ),
                           Positioned(
-                            bottom: -24, left: 0, right: 0,
-                            child: Center(
-                              child: Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                child: const Icon(Icons.refresh, color: Colors.black, size: 12),
+                            bottom: 0, 
+                            left: 64, 
+                            right: 64,
+                            child: Transform.scale(
+                              scale: 1.0 / widget.item.scale,
+                              alignment: Alignment.bottomCenter,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: _onHandlePanStart,
+                                onPanUpdate: _onRotatePanUpdate,
+                                child: Container(
+                                  color: Colors.transparent,
+                                  height: 48,
+                                  child: Center(
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.white, 
+                                        shape: BoxShape.circle, 
+                                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)],
+                                      ),
+                                      child: const Icon(Icons.refresh, color: Colors.black, size: 16),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ],
                       )
-                    : _buildStyledContent(),
+                    : Container(margin: const EdgeInsets.all(32), child: _buildStyledContent()),
               ),
             ),
           ),
@@ -298,12 +347,27 @@ class _EditableOverlayItemWidgetState extends ConsumerState<EditableOverlayItemW
   }
 
   Widget _buildHandle() {
-    return Container(
-      width: 12, height: 12,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)],
+    return Container(); // Deprecated, use _buildCornerHandle
+  }
+
+  Widget _buildCornerHandle() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: _onHandlePanStart,
+      onPanUpdate: _onResizePanUpdate,
+      child: Container(
+        color: Colors.transparent,
+        width: 48,
+        height: 48,
+        alignment: Alignment.center,
+        child: Container(
+          width: 12, height: 12,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)],
+          ),
+        ),
       ),
     );
   }

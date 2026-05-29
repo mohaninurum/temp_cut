@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:uuid/uuid.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../domain/models/overlay_item.dart';
 import '../providers/manual_editor_provider.dart';
@@ -384,7 +385,7 @@ class _PureManualEditorScreenState
       }
 
       Duration endTime = startTime + const Duration(seconds: 3);
-      if (endTime > state.backgroundDuration) {
+      if (endTime > state.backgroundDuration && state.backgroundDuration > Duration.zero) {
         endTime = state.backgroundDuration;
         if (startTime >= state.backgroundDuration) {
           startTime = state.backgroundDuration - const Duration(seconds: 3);
@@ -401,6 +402,47 @@ class _PureManualEditorScreenState
               value: pickedFile.path,
               position: const Offset(100, 200),
               scale: 1.0,
+              startTime: startTime,
+              endTime: endTime,
+            ),
+          );
+    }
+  }
+
+  Future<void> _addAudioOverlay() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+    );
+
+    if (result != null && result.files.single.path != null) {
+      final state = ref.read(manualEditorProvider);
+
+      final audioOverlays = state.overlays.where(
+        (o) => o.type == OverlayType.audio,
+      );
+      Duration startTime = Duration.zero;
+      if (audioOverlays.isNotEmpty) {
+        startTime = audioOverlays
+            .map((o) => o.endTime)
+            .reduce((a, b) => a > b ? a : b);
+      }
+
+      Duration endTime = startTime + const Duration(seconds: 10);
+      if (endTime > state.backgroundDuration && state.backgroundDuration > Duration.zero) {
+        endTime = state.backgroundDuration;
+        if (startTime >= state.backgroundDuration) {
+          startTime = state.backgroundDuration - const Duration(seconds: 10);
+          if (startTime.isNegative) startTime = Duration.zero;
+        }
+      }
+
+      ref
+          .read(manualEditorProvider.notifier)
+          .addOverlay(
+            OverlayItem(
+              id: const Uuid().v4(),
+              type: OverlayType.audio,
+              value: result.files.single.path!,
               startTime: startTime,
               endTime: endTime,
             ),
@@ -684,7 +726,9 @@ class _PureManualEditorScreenState
                                         ? 'Video'
                                         : (item.type == OverlayType.mainImage
                                               ? 'Image'
-                                              : 'Text')),
+                                              : (item.type == OverlayType.audio
+                                                    ? 'Audio'
+                                                    : 'Text'))),
                               style: TextStyle(
                                 color:
                                     (item.type == OverlayType.mainVideo ||
@@ -717,7 +761,9 @@ class _PureManualEditorScreenState
                                     ? 'Video'
                                     : (item.type == OverlayType.mainImage
                                           ? 'Image'
-                                          : 'Text')),
+                                          : (item.type == OverlayType.audio
+                                                ? 'Audio'
+                                                : 'Text'))),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -881,7 +927,14 @@ class _PureManualEditorScreenState
           children: [
             const SizedBox(height: 10),
             _buildTrackContentRow(
-              _buildEmptyTrackPlaceholder('Tap to add music'),
+              _buildOverlayTrack(
+                state.overlays
+                    .where((o) => o.type == OverlayType.audio)
+                    .toList(),
+                maxMs,
+                state,
+                'Tap to add music',
+              ),
               timelineWidth,
             ),
             _buildTrackContentRow(
@@ -935,7 +988,7 @@ class _PureManualEditorScreenState
             _buildTrackIconRow(
               icon: Icons.music_note,
               label: '+',
-              onTap: () {},
+              onTap: _addAudioOverlay,
             ),
             _buildTrackIconRow(
               icon: Icons.title,
@@ -2339,13 +2392,15 @@ class _PureManualEditorScreenState
           ),
 
           if (selectedOverlay != null &&
-              selectedOverlay.type == OverlayType.mainVideo)
+              (selectedOverlay.type == OverlayType.mainVideo ||
+                  selectedOverlay.type == OverlayType.mainImage))
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: _buildMainVideoToolbar(selectedOverlay),
             )
           else if (selectedOverlay != null)
-            if (selectedOverlay.type == OverlayType.image)
+            if (selectedOverlay.type == OverlayType.image ||
+                selectedOverlay.type == OverlayType.emoji)
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
