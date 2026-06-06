@@ -14,6 +14,7 @@ class OverlayItem {
   // New Timeline Duration fields
   final Duration startTime;
   final Duration endTime;
+  final Duration mediaStartTime;
 
   // New Styling fields
   final TextStyleMode textStyleMode;
@@ -35,6 +36,7 @@ class OverlayItem {
     this.rotation = 0.0,
     this.startTime = Duration.zero,
     this.endTime = const Duration(seconds: 10), // Default high duration, adjusted later
+    this.mediaStartTime = Duration.zero,
     this.textStyleMode = TextStyleMode.normal,
     this.textAlign = TextAlign.center,
     this.curveFactor = 0.0,
@@ -53,6 +55,7 @@ class OverlayItem {
     String? value,
     Duration? startTime,
     Duration? endTime,
+    Duration? mediaStartTime,
     TextStyleMode? textStyleMode,
     TextAlign? textAlign,
     double? curveFactor,
@@ -70,6 +73,7 @@ class OverlayItem {
       rotation: rotation ?? this.rotation,
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
+      mediaStartTime: mediaStartTime ?? this.mediaStartTime,
       textStyleMode: textStyleMode ?? this.textStyleMode,
       textAlign: textAlign ?? this.textAlign,
       curveFactor: curveFactor ?? this.curveFactor,

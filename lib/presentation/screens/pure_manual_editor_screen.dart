@@ -33,6 +33,7 @@ class _PureManualEditorScreenState
   // Dragging state for smooth timeline updates
   Duration? _dragInitialStartTime;
   Duration? _dragInitialEndTime;
+  Duration? _dragInitialMediaStartTime;
   double _dragAccumulator = 0.0;
   String? _activeBaseMediaId;
 
@@ -43,6 +44,7 @@ class _PureManualEditorScreenState
   static const double _pixelsPerSecond = 50.0;
   bool _isReady = false;
   bool _isEditingText = false;
+  bool _isVideoMuted = false;
 
   // Variables for tracking base media gestures
   double _baseMediaStartScale = 1.0;
@@ -83,7 +85,7 @@ class _PureManualEditorScreenState
               // Calculate local time within this media
               final localTimeMs =
                   currentDuration.inMilliseconds -
-                  activeMedia.startTime.inMilliseconds;
+                  activeMedia.startTime.inMilliseconds + activeMedia.mediaStartTime.inMilliseconds;
               controller.seekTo(Duration(milliseconds: localTimeMs));
             }
           }
@@ -132,6 +134,7 @@ class _PureManualEditorScreenState
         final controller = VideoPlayerController.file(File(media.path));
         try {
           await controller.initialize();
+          controller.setVolume(_isVideoMuted ? 0.0 : 1.0);
           _baseVideoControllers[newId] = controller;
 
           final duration = controller.value.duration;
@@ -206,6 +209,7 @@ class _PureManualEditorScreenState
         final controller = VideoPlayerController.file(File(media.path));
         try {
           await controller.initialize();
+          controller.setVolume(_isVideoMuted ? 0.0 : 1.0);
           _baseVideoControllers[item.id] = controller;
 
           final duration = controller.value.duration;
@@ -278,6 +282,7 @@ class _PureManualEditorScreenState
           id: newId,
           startTime: currentTime,
           endTime: currentTime + duration2,
+          mediaStartTime: item.mediaStartTime + duration1,
         );
 
         final updatedOldItem = item.copyWith(
@@ -310,6 +315,7 @@ class _PureManualEditorScreenState
             id: newId,
             startTime: currentTime,
             endTime: currentTime + duration2,
+            mediaStartTime: item.mediaStartTime + duration1,
           );
           
           final updatedOldItem = item.copyWith(
@@ -346,7 +352,10 @@ class _PureManualEditorScreenState
 
       final activeMedia = _getActiveBaseMedia(state, startPlayTime);
       if (activeMedia != null && activeMedia.type == OverlayType.mainVideo) {
-        _baseVideoControllers[activeMedia.id]?.play();
+        final controller = _baseVideoControllers[activeMedia.id];
+        final localTimeMs = startPlayTime.inMilliseconds - activeMedia.startTime.inMilliseconds + activeMedia.mediaStartTime.inMilliseconds;
+        controller?.seekTo(Duration(milliseconds: localTimeMs));
+        controller?.play();
       }
       ref.read(manualEditorProvider.notifier).setPlaying(true);
 
@@ -374,7 +383,7 @@ class _PureManualEditorScreenState
             if (currentActiveMedia.type == OverlayType.mainVideo) {
               final newController =
                   _baseVideoControllers[currentActiveMedia.id];
-              newController?.seekTo(Duration.zero);
+              newController?.seekTo(currentActiveMedia.mediaStartTime);
               if (currentState.isPlaying) newController?.play();
             }
           }
@@ -488,6 +497,14 @@ class _PureManualEditorScreenState
     );
 
     if (result != null && result.files.single.path != null) {
+      if (!_isVideoMuted) {
+        setState(() {
+          _isVideoMuted = true;
+          for (var controller in _baseVideoControllers.values) {
+            controller.setVolume(0.0);
+          }
+        });
+      }
       final state = ref.read(manualEditorProvider);
 
       final audioOverlays = state.overlays.where(
@@ -880,21 +897,25 @@ class _PureManualEditorScreenState
               behavior: HitTestBehavior.opaque,
               onHorizontalDragStart: (details) {
                 _dragInitialStartTime = item.startTime;
+                _dragInitialMediaStartTime = item.mediaStartTime;
                 _dragAccumulator = 0.0;
               },
               onHorizontalDragUpdate: (details) {
-                if (_dragInitialStartTime == null) return;
+                if (_dragInitialStartTime == null || _dragInitialMediaStartTime == null) return;
                 _dragAccumulator += details.delta.dx;
                 final deltaMs = (_dragAccumulator / trackWidth) * maxMs;
                 final clampedStart =
                     (_dragInitialStartTime!.inMilliseconds + deltaMs.toInt())
                         .clamp(0, item.endTime.inMilliseconds - 500);
 
+                final actualDeltaMs = clampedStart - _dragInitialStartTime!.inMilliseconds;
+
                 final isBaseMedia =
                     item.type == OverlayType.mainVideo ||
                     item.type == OverlayType.mainImage;
                 final updatedItem = item.copyWith(
                   startTime: Duration(milliseconds: clampedStart),
+                  mediaStartTime: Duration(milliseconds: _dragInitialMediaStartTime!.inMilliseconds + actualDeltaMs),
                 );
 
                 if (isBaseMedia) {
@@ -1102,7 +1123,18 @@ class _PureManualEditorScreenState
               hasCoverButton: true,
               onTap: _pickBackgroundMedia,
             ),
-            _buildTrackIconRow(icon: Icons.volume_up, label: '', onTap: () {}),
+            _buildTrackIconRow(
+              icon: _isVideoMuted ? Icons.volume_off : Icons.volume_up,
+              label: '',
+              onTap: () {
+                setState(() {
+                  _isVideoMuted = !_isVideoMuted;
+                  for (var controller in _baseVideoControllers.values) {
+                    controller.setVolume(_isVideoMuted ? 0.0 : 1.0);
+                  }
+                });
+              },
+            ),
           ],
         );
 
@@ -1347,7 +1379,8 @@ class _PureManualEditorScreenState
                     final controller = _baseVideoControllers[activeMedia.id];
                     final localTime =
                         currentItem.startTime.inMilliseconds -
-                        activeMedia.startTime.inMilliseconds;
+                        activeMedia.startTime.inMilliseconds +
+                        activeMedia.mediaStartTime.inMilliseconds;
                     controller?.seekTo(Duration(milliseconds: localTime));
                   }
                 } else {
@@ -1370,7 +1403,8 @@ class _PureManualEditorScreenState
                     final controller = _baseVideoControllers[activeMedia.id];
                     final localTime =
                         seekTime.inMilliseconds -
-                        activeMedia.startTime.inMilliseconds;
+                        activeMedia.startTime.inMilliseconds +
+                        activeMedia.mediaStartTime.inMilliseconds;
                     controller?.seekTo(Duration(milliseconds: localTime));
                   }
                 }
