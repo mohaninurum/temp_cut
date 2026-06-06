@@ -724,7 +724,20 @@ class _PureManualEditorScreenState
                         fit: BoxFit.cover,
                         alignment: Alignment.centerLeft,
                       ),
-                    if (item.type == OverlayType.image || item.type == OverlayType.mainImage)
+                    if (item.type == OverlayType.mainVideo && _baseVideoControllers[item.id]?.value.isInitialized == true)
+                      Builder(builder: (context) {
+                        final ctrl = _baseVideoControllers[item.id]!;
+                        return FittedBox(
+                          fit: BoxFit.cover,
+                          alignment: Alignment.centerLeft,
+                          child: SizedBox(
+                            width: ctrl.value.size.width,
+                            height: ctrl.value.size.height,
+                            child: VideoPlayer(ctrl),
+                          ),
+                        );
+                      }),
+                    if (item.type == OverlayType.image || item.type == OverlayType.mainImage || item.type == OverlayType.mainVideo)
                       Container(color: Colors.black45),
                     Center(
                       child: isSelected
@@ -732,7 +745,7 @@ class _PureManualEditorScreenState
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                  item.type == OverlayType.emoji
+                                  (item.type == OverlayType.emoji || item.type == OverlayType.text)
                                       ? item.value
                                       : (item.type == OverlayType.mainVideo
                                             ? 'Video'
@@ -742,7 +755,7 @@ class _PureManualEditorScreenState
                                                         ? 'Image'
                                                         : (item.type == OverlayType.audio
                                                               ? 'Audio'
-                                                              : 'Text')))),
+                                                              : 'Unknown')))),
                                   style: TextStyle(
                                     color:
                                         (item.type == OverlayType.mainVideo ||
@@ -769,7 +782,7 @@ class _PureManualEditorScreenState
                               ],
                             )
                           : Text(
-                              item.type == OverlayType.emoji
+                              (item.type == OverlayType.emoji || item.type == OverlayType.text)
                                   ? item.value
                                   : (item.type == OverlayType.mainVideo
                                         ? 'Video'
@@ -779,7 +792,7 @@ class _PureManualEditorScreenState
                                                     ? 'Image'
                                                     : (item.type == OverlayType.audio
                                                           ? 'Audio'
-                                                          : 'Text')))),
+                                                          : 'Unknown')))),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 10,
