@@ -695,6 +695,7 @@ class _PureManualEditorScreenState
                 _dragInitialEndTime = null;
               },
               child: Container(
+                clipBehavior: Clip.hardEdge,
                 decoration: BoxDecoration(
                   color: isSelected
                       ? (item.type == OverlayType.mainVideo ||
@@ -714,62 +715,79 @@ class _PureManualEditorScreenState
                         )
                       : Border.all(color: Colors.white, width: 1),
                 ),
-                child: Center(
-                  child: isSelected
-                      ? Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (item.type == OverlayType.image || item.type == OverlayType.mainImage)
+                      Image.file(
+                        File(item.value),
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerLeft,
+                      ),
+                    if (item.type == OverlayType.image || item.type == OverlayType.mainImage)
+                      Container(color: Colors.black45),
+                    Center(
+                      child: isSelected
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  item.type == OverlayType.emoji
+                                      ? item.value
+                                      : (item.type == OverlayType.mainVideo
+                                            ? 'Video'
+                                            : (item.type == OverlayType.mainImage
+                                                  ? 'Image'
+                                                  : (item.type == OverlayType.image
+                                                        ? 'Image'
+                                                        : (item.type == OverlayType.audio
+                                                              ? 'Audio'
+                                                              : 'Text')))),
+                                  style: TextStyle(
+                                    color:
+                                        (item.type == OverlayType.mainVideo ||
+                                            item.type == OverlayType.mainImage)
+                                        ? Colors.yellowAccent
+                                        : Colors.cyanAccent,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  durationText,
+                                  style: TextStyle(
+                                    color:
+                                        (item.type == OverlayType.mainVideo ||
+                                            item.type == OverlayType.mainImage)
+                                        ? Colors.yellowAccent
+                                        : Colors.cyanAccent,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(
                               item.type == OverlayType.emoji
                                   ? item.value
                                   : (item.type == OverlayType.mainVideo
                                         ? 'Video'
                                         : (item.type == OverlayType.mainImage
                                               ? 'Image'
-                                              : (item.type == OverlayType.audio
-                                                    ? 'Audio'
-                                                    : 'Text'))),
-                              style: TextStyle(
-                                color:
-                                    (item.type == OverlayType.mainVideo ||
-                                        item.type == OverlayType.mainImage)
-                                    ? Colors.yellowAccent
-                                    : Colors.cyanAccent,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                                              : (item.type == OverlayType.image
+                                                    ? 'Image'
+                                                    : (item.type == OverlayType.audio
+                                                          ? 'Audio'
+                                                          : 'Text')))),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              durationText,
-                              style: TextStyle(
-                                color:
-                                    (item.type == OverlayType.mainVideo ||
-                                        item.type == OverlayType.mainImage)
-                                    ? Colors.yellowAccent
-                                    : Colors.cyanAccent,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
-                        )
-                      : Text(
-                          item.type == OverlayType.emoji
-                              ? item.value
-                              : (item.type == OverlayType.mainVideo
-                                    ? 'Video'
-                                    : (item.type == OverlayType.mainImage
-                                          ? 'Image'
-                                          : (item.type == OverlayType.audio
-                                                ? 'Audio'
-                                                : 'Text'))),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                    ),
+                  ],
                 ),
               ),
             ),
