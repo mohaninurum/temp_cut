@@ -81,6 +81,10 @@ class ManualEditorStateNotifier extends StateNotifier<ManualEditorState> {
     _updateBaseMediaAndDuration(newBaseMedia);
   }
 
+  void setBaseMedia(List<OverlayItem> baseMedia) {
+    _updateBaseMediaAndDuration(baseMedia);
+  }
+
   void _updateBaseMediaAndDuration(List<OverlayItem> baseMedia) {
     Duration currentStart = Duration.zero;
     final List<OverlayItem> alignedMedia = [];

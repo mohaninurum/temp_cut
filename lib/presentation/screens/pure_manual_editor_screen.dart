@@ -9,6 +9,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
+import 'dart:typed_data';
+import 'package:get_thumbnail_video/video_thumbnail.dart';
+import 'package:get_thumbnail_video/index.dart';
 
 import '../../domain/models/overlay_item.dart';
 import '../providers/manual_editor_provider.dart';
@@ -191,8 +194,12 @@ class _PureManualEditorScreenState
 
       // Dispose old controller if it was a video
       if (item.type == OverlayType.mainVideo) {
-        _baseVideoControllers[item.id]?.dispose();
+        final oldCtrl = _baseVideoControllers[item.id];
         _baseVideoControllers.remove(item.id);
+        // Only dispose if no other segment is sharing this controller
+        if (oldCtrl != null && !_baseVideoControllers.values.contains(oldCtrl)) {
+          oldCtrl.dispose();
+        }
       }
 
       if (isVideo) {
@@ -246,6 +253,72 @@ class _PureManualEditorScreenState
         // Seek to the start of the newly replaced image
         ref.read(manualEditorProvider.notifier).setCurrentTime(item.startTime);
         _activeBaseMediaId = item.id;
+      }
+    }
+  }
+
+  void _splitSelectedMedia() {
+    final state = ref.read(manualEditorProvider);
+    final selectedId = state.selectedOverlayId;
+    if (selectedId == null) return;
+
+    final currentTime = state.currentTime;
+
+    // Check if it's base media
+    final baseMediaIndex = state.baseMedia.indexWhere((o) => o.id == selectedId);
+    if (baseMediaIndex != -1) {
+      final item = state.baseMedia[baseMediaIndex];
+      // Only split if playhead is strictly inside the clip
+      if (currentTime > item.startTime && currentTime < item.endTime) {
+        final duration1 = currentTime - item.startTime;
+        final duration2 = item.endTime - currentTime;
+
+        final newId = const Uuid().v4();
+        final newItem = item.copyWith(
+          id: newId,
+          startTime: currentTime,
+          endTime: currentTime + duration2,
+        );
+
+        final updatedOldItem = item.copyWith(
+          endTime: item.startTime + duration1,
+        );
+
+        if (item.type == OverlayType.mainVideo) {
+          if (_baseVideoControllers.containsKey(item.id)) {
+            _baseVideoControllers[newId] = _baseVideoControllers[item.id]!;
+          }
+        }
+
+        final newList = List<OverlayItem>.from(state.baseMedia);
+        newList[baseMediaIndex] = updatedOldItem;
+        newList.insert(baseMediaIndex + 1, newItem);
+
+        ref.read(manualEditorProvider.notifier).setBaseMedia(newList);
+      }
+    } else {
+      // Check if it's overlay
+      final overlayIndex = state.overlays.indexWhere((o) => o.id == selectedId);
+      if (overlayIndex != -1) {
+        final item = state.overlays[overlayIndex];
+        if (currentTime > item.startTime && currentTime < item.endTime) {
+          final newId = const Uuid().v4();
+          final duration1 = currentTime - item.startTime;
+          final duration2 = item.endTime - currentTime;
+          
+          final newItem = item.copyWith(
+            id: newId,
+            startTime: currentTime,
+            endTime: currentTime + duration2,
+          );
+          
+          final updatedOldItem = item.copyWith(
+            endTime: item.startTime + duration1,
+          );
+
+          ref.read(manualEditorProvider.notifier).updateOverlay(updatedOldItem);
+          ref.read(manualEditorProvider.notifier).addOverlay(newItem);
+        }
       }
     }
   }
@@ -725,18 +798,10 @@ class _PureManualEditorScreenState
                         alignment: Alignment.centerLeft,
                       ),
                     if (item.type == OverlayType.mainVideo && _baseVideoControllers[item.id]?.value.isInitialized == true)
-                      Builder(builder: (context) {
-                        final ctrl = _baseVideoControllers[item.id]!;
-                        return FittedBox(
-                          fit: BoxFit.cover,
-                          alignment: Alignment.centerLeft,
-                          child: SizedBox(
-                            width: ctrl.value.size.width,
-                            height: ctrl.value.size.height,
-                            child: VideoPlayer(ctrl),
-                          ),
-                        );
-                      }),
+                      _VideoFilmstrip(
+                        videoPath: item.value,
+                        durationMs: (item.endTime - item.startTime).inMilliseconds,
+                      ),
                     if (item.type == OverlayType.image || item.type == OverlayType.mainImage || item.type == OverlayType.mainVideo)
                       Container(color: Colors.black45),
                     Center(
@@ -1939,6 +2004,12 @@ class _PureManualEditorScreenState
               color: Colors.black,
             ),
             _buildToolbarActionMini(
+              Icons.content_cut,
+              'Trim',
+              () => _splitSelectedMedia(),
+              color: Colors.black,
+            ),
+            _buildToolbarActionMini(
               Icons.diamond_outlined,
               'Keyframe',
               () {},
@@ -1994,19 +2065,22 @@ class _PureManualEditorScreenState
     );
   }
 
-  Widget _buildToolbarIcon(IconData icon, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: Colors.white, size: 20),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white54, fontSize: 10),
-          ),
-        ],
+  Widget _buildToolbarIcon(IconData icon, String label, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white54, fontSize: 10),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2471,9 +2545,9 @@ class _PureManualEditorScreenState
               child: Row(
                 children: [
                   _buildToolbarIcon(Icons.color_lens_outlined, 'Filter'),
-                  _buildToolbarIcon(Icons.content_cut, 'Trim'),
+                  _buildToolbarIcon(Icons.content_cut, 'Trim', onTap: () => _splitSelectedMedia()),
                   _buildToolbarIcon(Icons.auto_awesome, 'FX'),
-                  _buildToolbarIcon(Icons.call_split, 'Split'),
+                  _buildToolbarIcon(Icons.call_split, 'Split', onTap: () => _splitSelectedMedia()),
                   _buildToolbarIcon(Icons.speed, 'Speed'),
                   _buildToolbarIcon(Icons.volume_up_outlined, 'Volume'),
                   _buildToolbarIcon(Icons.blur_linear, 'Fade'),
@@ -2541,8 +2615,7 @@ class _TextCustomizerWidgetState extends ConsumerState<_TextCustomizerWidget> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
+                TextButton(
                   onPressed: () {
                     if (widget.onClose != null) {
                       widget.onClose!();
@@ -2551,12 +2624,14 @@ class _TextCustomizerWidgetState extends ConsumerState<_TextCustomizerWidget> {
                       Navigator.pop(context);
                     }
                   },
+                  child: const Text('Done', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
             TextField(
               controller: _controller,
               autofocus: true,
+              textInputAction: TextInputAction.done,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
                 hintText: 'Enter text here',
@@ -2566,6 +2641,14 @@ class _TextCustomizerWidgetState extends ConsumerState<_TextCustomizerWidget> {
               ),
               onChanged: (val) {
                 ref.read(manualEditorProvider.notifier).updateOverlay(item.copyWith(value: val));
+              },
+              onSubmitted: (_) {
+                if (widget.onClose != null) {
+                  widget.onClose!();
+                } else {
+                  ref.read(manualEditorProvider.notifier).setSelectedOverlay(null);
+                  Navigator.pop(context);
+                }
               },
             ),
             const SizedBox(height: 16),
@@ -2627,6 +2710,85 @@ class _TextCustomizerWidgetState extends ConsumerState<_TextCustomizerWidget> {
         ),
        ),
       ),
+    );
+  }
+}
+
+class _VideoFilmstrip extends StatefulWidget {
+  final String videoPath;
+  final int durationMs;
+
+  const _VideoFilmstrip({Key? key, required this.videoPath, required this.durationMs}) : super(key: key);
+
+  @override
+  _VideoFilmstripState createState() => _VideoFilmstripState();
+}
+
+class _VideoFilmstripState extends State<_VideoFilmstrip> {
+  List<Uint8List?> _thumbnails = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _generateThumbnails();
+  }
+
+  @override
+  void didUpdateWidget(_VideoFilmstrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoPath != widget.videoPath) {
+      _generateThumbnails();
+    }
+  }
+
+  Future<void> _generateThumbnails() async {
+    setState(() {
+      _loading = true;
+    });
+
+    int count = 10; // fixed count of thumbnails to show across the track
+    List<Uint8List?> th = [];
+    int interval = widget.durationMs ~/ count;
+
+    for (int i = 0; i < count; i++) {
+      try {
+        final uint8list = await VideoThumbnail.thumbnailData(
+          video: widget.videoPath,
+          imageFormat: ImageFormat.JPEG,
+          timeMs: i * interval,
+          quality: 25,
+          maxHeight: 100, // optimization
+        );
+        th.add(uint8list);
+      } catch (e) {
+        th.add(null);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _thumbnails = th;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(color: Colors.black45);
+    }
+    return Row(
+      children: _thumbnails.map((t) {
+        if (t != null) {
+          return Expanded(
+            child: Image.memory(t, fit: BoxFit.cover, height: double.infinity),
+          );
+        } else {
+          return Expanded(child: Container(color: Colors.black45));
+        }
+      }).toList(),
     );
   }
 }

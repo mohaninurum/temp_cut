@@ -45,6 +45,7 @@ class OverlayItem {
   });
 
   OverlayItem copyWith({
+    String? id,
     OverlayType? type,
     Offset? position,
     double? scale,
@@ -61,7 +62,7 @@ class OverlayItem {
     double? animationDuration,
   }) {
     return OverlayItem(
-      id: id,
+      id: id ?? this.id,
       type: type ?? this.type,
       value: value ?? this.value,
       position: position ?? this.position,
